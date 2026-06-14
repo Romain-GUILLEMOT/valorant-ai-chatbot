@@ -4,6 +4,7 @@ import threading
 import time
 from datetime import datetime
 from flask import Flask, jsonify, render_template, send_from_directory
+from flask_sock import Sock
 import capture
 import config
 import vision
@@ -15,7 +16,10 @@ HOST = "127.0.0.1"
 PORT = 8787
 
 app = Flask(__name__)
+sock = Sock(app)
 state_lock = threading.Lock()
+ws_lock = threading.Lock()
+ws_clients = set()
 
 state = {
     "status": "starting",
@@ -31,8 +35,10 @@ state = {
     "ai": {
         "last_prompt": None,
         "last_sent_prompt": None,
+        "last_raw_response": None,
         "last_message": None,
         "last_error": None,
+        "last_generation_ms": 0,
         "updated_at": None,
         "prompts": ollama_client.public_prompts()
     },
@@ -68,6 +74,28 @@ def save_state():
     with open(os.path.join(config.DEBUG_DIR, "state.json"), "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
+def state_snapshot_json():
+    with state_lock:
+        return json.dumps(state, ensure_ascii=False)
+
+def broadcast_state():
+    payload = state_snapshot_json()
+    dead = []
+
+    with ws_lock:
+        clients = list(ws_clients)
+
+    for client in clients:
+        try:
+            client.send(payload)
+        except Exception:
+            dead.append(client)
+
+    if dead:
+        with ws_lock:
+            for client in dead:
+                ws_clients.discard(client)
+
 def reset_score(now=None):
     now = now or datetime.now().isoformat(timespec="seconds")
     state["score"] = {
@@ -92,6 +120,7 @@ def adjust_score(team, delta):
         state.setdefault("latest", {})["score"] = dict(score)
         save_state()
 
+    broadcast_state()
     print(f"[shortcut] score allies={score['allies']} enemies={score['enemies']}")
 
 def record_live_deaths(live_duels, now):
@@ -121,29 +150,39 @@ def generate_ai_message(prompt_id):
     with state_lock:
         snapshot = json.loads(json.dumps(state, ensure_ascii=False))
 
+    t0 = time.perf_counter()
+
     try:
-        message, sent_prompt = ollama_client.generate_message(prompt_id, snapshot)
+        message, sent_prompt, raw_response = ollama_client.generate_message(prompt_id, snapshot)
         error = None
     except Exception as exc:
         message = None
         sent_prompt = None
+        raw_response = None
         error = str(exc)
+
+    generation_ms = round((time.perf_counter() - t0) * 1000)
 
     with state_lock:
         state["ai"]["last_prompt"] = prompt_id
         state["ai"]["last_sent_prompt"] = sent_prompt
+        state["ai"]["last_raw_response"] = raw_response
         state["ai"]["last_message"] = message
         state["ai"]["last_error"] = error
+        state["ai"]["last_generation_ms"] = generation_ms
         state["ai"]["updated_at"] = now
         save_state()
 
-    if message:
-        print(f"[ai:{prompt_id}] copied: {message}")
-        print(f"[ai:{prompt_id}:prompt]\n{sent_prompt}")
-    else:
-        print(f"[ai:{prompt_id}] error: {error}")
+    broadcast_state()
 
-    return message, sent_prompt, error
+    if message:
+        print(f"[ai:{prompt_id}] copied in {generation_ms}ms: {message}")
+        print(f"[ai:{prompt_id}:prompt]\n{sent_prompt}")
+        print(f"[ai:{prompt_id}:raw]\n{raw_response}")
+    else:
+        print(f"[ai:{prompt_id}] error in {generation_ms}ms: {error}")
+
+    return message, sent_prompt, raw_response, generation_ms, error
 
 def warm_ollama_loop():
     while True:
@@ -167,6 +206,7 @@ def request_new_game_full_scan():
         state["status"] = "full scan requested"
         save_state()
 
+    broadcast_state()
     print("[shortcut] new game requested + full scan forced + cache cleared")
 
 def start_new_game(now):
@@ -273,6 +313,8 @@ def scan_once():
     with state_lock:
         update_game(scoreboard, live_duels, timings)
 
+    broadcast_state()
+
     scan_type = "FULL" if timings["full_scan"] else "FAST"
     print(
         f"[scan:{scan_type}] total={timings['scan_ms']}ms "
@@ -297,6 +339,7 @@ def scanner_loop():
             with state_lock:
                 state["status"] = f"error: {e}"
                 save_state()
+            broadcast_state()
             print(f"[scan error] {e}")
 
         time.sleep(SCAN_INTERVAL)
@@ -312,6 +355,22 @@ def index():
 def api_state():
     with state_lock:
         return jsonify(state)
+
+@sock.route("/ws/state")
+def ws_state(ws):
+    with ws_lock:
+        ws_clients.add(ws)
+
+    try:
+        ws.send(state_snapshot_json())
+
+        while True:
+            message = ws.receive()
+            if message is None:
+                break
+    finally:
+        with ws_lock:
+            ws_clients.discard(ws)
 
 @app.post("/api/new-game")
 def api_new_game():
@@ -331,12 +390,18 @@ def api_score(team, direction):
 
 @app.post("/api/ai/<prompt_id>")
 def api_ai(prompt_id):
-    message, sent_prompt, error = generate_ai_message(prompt_id)
+    message, sent_prompt, raw_response, generation_ms, error = generate_ai_message(prompt_id)
 
     if error:
-        return jsonify({"ok": False, "error": error}), 502
+        return jsonify({"ok": False, "error": error, "generation_ms": generation_ms}), 502
 
-    return jsonify({"ok": True, "message": message, "sent_prompt": sent_prompt})
+    return jsonify({
+        "ok": True,
+        "message": message,
+        "sent_prompt": sent_prompt,
+        "raw_response": raw_response,
+        "generation_ms": generation_ms
+    })
 
 @app.get("/assets/agents/<path:filename>")
 def agent_asset(filename):
@@ -352,4 +417,4 @@ if __name__ == "__main__":
     threading.Thread(target=warm_ollama_loop, daemon=True).start()
 
     print(f"[+] web: http://{HOST}:{PORT}")
-    app.run(host=HOST, port=PORT, debug=False, use_reloader=False)
+    app.run(host=HOST, port=PORT, debug=False, use_reloader=False, threaded=True)

@@ -20,5 +20,5 @@ def start_shortcuts(on_force_new_game, on_score_delta, on_ai_prompt):
 
     print(f"[+] shortcut loaded: {HOTKEYS['force_new_game']} => nouvelle partie + full scan")
     print("[+] score shortcuts: T+Up/Down allies, T+Right/Left enemies")
-    print("[+] ai shortcuts: T+F1..T+F5 prompts, T+F6 disclaimer")
+    print("[+] ai shortcuts: T+U/I/O/P/J prompts, T+K disclaimer")
     keyboard.wait()

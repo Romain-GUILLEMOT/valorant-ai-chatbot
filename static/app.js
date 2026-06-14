@@ -4,6 +4,8 @@ const rankSrc = row => row?.rank_img ? `/assets/ranks/${row.rank_img}` : "/asset
 
 let lastData = null;
 let lastUpdatedAt = null;
+let ws = null;
+let wsReconnectTimer = null;
 
 const SHORTCUTS = [
   ["T+N", "Reset game + full scan"],
@@ -11,7 +13,7 @@ const SHORTCUTS = [
   ["T+DOWN", "Ally score -1"],
   ["T+RIGHT", "Enemy score +1"],
   ["T+LEFT", "Enemy score -1"],
-  ["T+F6", "Gamma disclaimer"]
+  ["T+K", "Llama disclaimer"]
 ];
 
 const pct = value => {
@@ -78,13 +80,14 @@ function playerRow(row) {
 function duel(row) {
   const kills = parseInt(row.kills, 10) || 0;
   const deaths = parseInt(row.deaths, 10) || 0;
-  const diff = kills - deaths;
   const avatar = agentSrc(row);
   return `<article class="duel">
-    <div class="agent-icon small">${avatar ? `<img src="${avatar}" alt="">` : ""}</div>
-    <strong>${empty(row.agent)}</strong>
-    <b>${kills}-${deaths}</b>
-    <em class="${tone(diff)}">${diff > 0 ? "+" : ""}${diff}</em>
+    <div class="duel-agent">
+      <span>Agent</span>
+      <div><div class="agent-icon small">${avatar ? `<img src="${avatar}" alt="">` : ""}</div><strong>${empty(row.agent)}</strong></div>
+    </div>
+    <div class="duel-stat good"><span>Killed</span><b>${kills}</b></div>
+    <div class="duel-stat bad"><span>Killed by</span><b>${deaths}</b></div>
   </article>`;
 }
 
@@ -140,7 +143,7 @@ function renderPrompts(ai) {
 }
 
 function renderDeaths(deaths) {
-  document.querySelector("#death-log").innerHTML = (deaths || []).slice(-3).reverse().map(death => `
+  document.querySelector("#death-log").innerHTML = (deaths || []).slice(-2).reverse().map(death => `
     <div class="death-item">
       <b>${empty(death.killed_by_agent)}</b>
       <span>${String(death.at || "").split("T").at(-1) || "?"}</span>
@@ -150,7 +153,6 @@ function renderDeaths(deaths) {
 
 async function postScore(team, direction) {
   await fetch(`/api/score/${team}/${direction}`, { method: "POST" });
-  await load();
 }
 
 async function postPrompt(promptId) {
@@ -159,12 +161,11 @@ async function postPrompt(promptId) {
   const res = await fetch(`/api/ai/${promptId}`, { method: "POST" });
   const data = await res.json();
   console.log("[valorant-ai] prompt sent", data.sent_prompt || data.error || "no prompt");
-  status.textContent = data.ok ? `copied: ${data.message}` : `error: ${data.error}`;
-  await load();
+  console.log("[valorant-ai] raw response", data.raw_response || "");
+  status.textContent = data.ok ? `copied (${data.generation_ms || 0}ms): ${data.message}` : `error (${data.generation_ms || 0}ms): ${data.error}`;
 }
 
-async function load() {
-  const data = await fetch("/api/state", { cache: "no-store" }).then(r => r.json());
+function renderData(data) {
   const latest = data.latest || {};
   const score = latest.score || data.score || {};
   lastData = data;
@@ -184,13 +185,44 @@ async function load() {
 
   const ai = data.ai || {};
   if (ai.last_message || ai.last_error) {
-    document.querySelector("#ai-status").textContent = ai.last_message ? `copied: ${ai.last_message}` : `error: ${ai.last_error}`;
+    document.querySelector("#ai-status").textContent = ai.last_message
+      ? `copied (${ai.last_generation_ms || 0}ms): ${ai.last_message}`
+      : `error (${ai.last_generation_ms || 0}ms): ${ai.last_error}`;
   }
+}
+
+async function load() {
+  const data = await fetch("/api/state", { cache: "no-store" }).then(r => r.json());
+  renderData(data);
+}
+
+function connectStateSocket() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${protocol}://${window.location.host}/ws/state`);
+
+  ws.onmessage = event => {
+    try {
+      renderData(JSON.parse(event.data));
+    } catch (error) {
+      console.warn("[valorant-ai] invalid ws state", error);
+    }
+  };
+
+  ws.onopen = () => console.log("[valorant-ai] state websocket connected");
+  ws.onerror = error => console.warn("[valorant-ai] state websocket error", error);
+  ws.onclose = () => {
+    console.warn("[valorant-ai] state websocket closed, fallback polling active");
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = setTimeout(connectStateSocket, 1500);
+  };
 }
 
 document.querySelector("#new-game-btn").addEventListener("click", async () => {
   await fetch("/api/new-game", { method: "POST" });
-  await load();
 });
 
 document.querySelectorAll(".score-btn").forEach(button => {
@@ -198,5 +230,6 @@ document.querySelectorAll(".score-btn").forEach(button => {
 });
 
 load();
-setInterval(load, 3000);
+connectStateSocket();
+setInterval(load, 10000);
 setInterval(renderMatchMeta, 1000);
