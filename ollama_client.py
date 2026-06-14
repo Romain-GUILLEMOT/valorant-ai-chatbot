@@ -176,7 +176,7 @@ def mention_name(name):
 
 def context_lines(context):
     lines = [
-        f"Local player: {context.get('my_name')}",
+        "Local player: me",
         f"Score: {context.get('score')}"
     ]
 
@@ -184,7 +184,7 @@ def context_lines(context):
     if me:
         lines.append(
             "My stats: "
-            f"name={me.get('name')} agent={me.get('agent')} kd={me.get('kd')} "
+            f"agent={me.get('agent')} kd={me.get('kd')} "
             f"assists={me.get('assists')} kast={me.get('kast')}"
         )
 
@@ -237,9 +237,10 @@ def build_prompt(prompt_id, state):
         "Maximum 90 characters. No commas. No quotes. No explanation.\n"
         "No clear insult. No threat. Never flame my team.\n"
         "Ignore HS/headshot percentage and never mention HS/headshot.\n"
+        "Write in first person as if I am sending the message myself.\n"
         "Never include my player name or any nickname variant in the output.\n"
         "Avoid animal metaphors and long poetic sentences.\n"
-        f"My player name is {settings['player_name']}.\n"
+        "The local player is me. Use my stats as first-person context only.\n"
         f"Task: {prompt['instruction']}\n"
         f"Optional mention: {mention}\n"
         f"{mention_rule}\n"
@@ -303,11 +304,11 @@ def sanitize_chat_line(text, player_name=""):
 
 def fallback_message(prompt_id):
     fallbacks = {
-        "p1": "btw your mental is on eco",
-        "p2": "we breathe then the spike remembers us",
-        "p3": "gg lost the map won the duel economy",
-        "p4": "kills are loud but KAST pays rent",
-        "p5": "the spike is buffering reality"
+        "p1": "btw I think your mental is on eco",
+        "p2": "we breathe then I turn this round back on",
+        "p3": "gg I lost the map but won the duel economy",
+        "p4": "my kills are quiet but my KAST pays rent",
+        "p5": "I think the spike is buffering reality"
     }
     return fallbacks.get(prompt_id, "btw the spike has more philosophy than us")
 
@@ -353,6 +354,7 @@ def generate_message(prompt_id, state):
         retry_payload["prompt"] = (
             "Write only one short English Valorant chat line. "
             "No commas. No quotes. No clear insult. Never mention HS/headshot. "
+            "Write in first person as me. Never include my player name or variants. "
             f"Task: {PROMPTS[prompt_id]['instruction']} "
             f"Data: {context_lines(compact_state(state))}"
         )

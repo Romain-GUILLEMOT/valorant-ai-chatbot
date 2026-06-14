@@ -102,7 +102,7 @@ L'assistant local Ollama est dans `ollama_client.py`. Il lit `.env`, appelle `OL
 Ne retire pas `keep_alive`: chaque generation doit garder le modele chaud, et `main.warm_ollama_loop()` ping le modele toutes les 20 minutes.
 
 `PLAYER_NAME` dans `.env` identifie le joueur local; la valeur actuelle est `Yotakipa`. Ne remets pas HS% dans le contexte IA: le headshot rate doit etre ignore par les prompts. Pour debug, `main.generate_ai_message()` stocke `ai.last_sent_prompt`, le print cote serveur, et l'UI le log dans la console navigateur.
-Le pseudo local ne doit jamais apparaitre dans le message final, meme sous une variante type `Yota...`. `sanitize_chat_line()` doit le retirer meme si le modele le genere, et `choose_mention_target()` ne doit jamais choisir le joueur local comme mention.
+Le pseudo local ne doit jamais apparaitre dans le message final, meme sous une variante type `Yota...`. Les messages doivent etre ecrits a la premiere personne comme si le joueur local parlait lui-meme. `sanitize_chat_line()` doit retirer le pseudo local meme si le modele le genere, et `choose_mention_target()` ne doit jamais choisir le joueur local comme mention.
 
 Garde-fous a conserver:
 

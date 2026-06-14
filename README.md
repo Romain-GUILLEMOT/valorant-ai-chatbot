@@ -72,7 +72,7 @@ Les prompts IA:
 Les messages generes doivent rester courts, en anglais, sans virgule, sans insulte claire ni contenu a risque de ban. Les piques visent l'equipe adverse, jamais l'equipe alliee. Le prompt peut mentionner une personne environ 33% du temps, adversaire pour les piques ou allie pour l'encouragement. Une mention est autorisee seulement si le pseudo n'a ni espace ni caractere special; les pseudos Unicode type russe/japonais passent. La mention doit etre au format `@Pseudo ` avec un espace apres le pseudo, jamais une ponctuation collee.
 
 L'assistant considere `PLAYER_NAME=Yotakipa` comme le joueur local. Le pourcentage de headshot est volontairement exclu du contexte IA et ignore dans les prompts.
-Le pseudo local sert seulement a identifier les stats du joueur; il ne doit jamais apparaitre dans la reponse finale, meme sous une variante type `Yota...`.
+Le pseudo local sert seulement a identifier les stats du joueur. La reponse finale doit etre ecrite a la premiere personne, comme si le joueur local parlait lui-meme, et ne doit jamais contenir le pseudo local ni une variante type `Yota...`.
 
 ## API locale
 
