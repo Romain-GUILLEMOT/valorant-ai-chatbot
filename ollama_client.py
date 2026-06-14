@@ -176,7 +176,8 @@ def mention_name(name):
 
 def context_lines(context):
     lines = [
-        "Local player: me",
+        f"Local player name used only to identify my own stats: {context.get('my_name')}",
+        "Never target mention or mock the local player",
         f"Score: {context.get('score')}"
     ]
 
@@ -239,8 +240,9 @@ def build_prompt(prompt_id, state):
         "Ignore HS/headshot percentage and never mention HS/headshot.\n"
         "Write in first person as if I am sending the message myself.\n"
         "Never include my player name or any nickname variant in the output.\n"
+        "Never target me never mention me and never make fun of my stats.\n"
         "Avoid animal metaphors and long poetic sentences.\n"
-        "The local player is me. Use my stats as first-person context only.\n"
+        f"My exact player name is {settings['player_name']}. Use it only to find my own stats.\n"
         f"Task: {prompt['instruction']}\n"
         f"Optional mention: {mention}\n"
         f"{mention_rule}\n"
