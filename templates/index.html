@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Valorant Local Pipeline</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="match-block">
+        <div id="game" class="game-id">MATCH ?</div>
+        <div id="status" class="status-pill">STARTING</div>
+      </div>
+
+      <div class="scoreboard">
+        <button class="score-btn" data-team="allies" data-direction="down">-</button>
+        <button class="score-btn" data-team="allies" data-direction="up">+</button>
+        <div class="score-team">
+          <span>ALLY</span>
+          <strong id="score-allies">0</strong>
+        </div>
+        <div class="score-sep">:</div>
+        <div class="score-team enemy">
+          <span>ENEMY</span>
+          <strong id="score-enemies">0</strong>
+        </div>
+        <button class="score-btn" data-team="enemies" data-direction="down">-</button>
+        <button class="score-btn" data-team="enemies" data-direction="up">+</button>
+      </div>
+
+      <button id="new-game-btn" class="reset-btn">RESET</button>
+    </header>
+
+    <section class="perf-grid" id="timings"></section>
+    <section class="duels-grid" id="duels"></section>
+    <section class="players-panel" id="players"></section>
+    <section class="history-strip" id="history"></section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

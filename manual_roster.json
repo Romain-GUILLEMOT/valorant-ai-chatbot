@@ -1,0 +1,76 @@
+{
+  "allies": [
+    {
+      "slot": 1,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    },
+    {
+      "slot": 2,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    },
+    {
+      "slot": 3,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    },
+    {
+      "slot": 4,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    },
+    {
+      "slot": 5,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    }
+  ],
+  "enemies": [
+    {
+      "slot": 1,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    },
+    {
+      "slot": 2,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    },
+    {
+      "slot": 3,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    },
+    {
+      "slot": 4,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    },
+    {
+      "slot": 5,
+      "name": "",
+      "agent": "unknown",
+      "rank": "unknown",
+      "level": ""
+    }
+  ]
+}

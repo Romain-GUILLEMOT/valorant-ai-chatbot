@@ -1,0 +1,88 @@
+# AGENT.md
+
+Ce projet est un pipeline local temps reel pour Valorant Tracker / Overwolf. Il capture deux fenetres Windows, extrait scoreboard et live duels par OCR, template matching et vision OpenCV, publie un state JSON local, puis affiche une UI web compacte.
+
+## Regles importantes pour modifier le code
+
+- Lis d'abord `main.py`, `vision.py`, `capture.py`, `shortcuts.py`, `config.py`, `static/app.js` et `templates/index.html` avant de modifier le comportement.
+- Ne casse pas le contrat principal: `GET /api/state` doit rester le point d'entree JSON pour l'UI et les futurs assistants IA locaux.
+- Toute nouvelle donnee exposee doit etre ajoutee de facon additive quand c'est possible. Evite de renommer brutalement `latest`, `games`, `scoreboard`, `live_duels`, `score`, `scan_ms`, `ocr_ms`, `template_ms`, `cache_hits`, `cache_misses`, `full_scan`.
+- Le projet n'a pas de fichier de dependances verifie au moment de cette note. N'invente pas de commande d'installation sans verifier le code ou ajouter explicitement le fichier correspondant.
+- Les assets `agents/*.png` et `ranks/*.png` sont utilises comme templates et comme images UI. Ne change pas les noms sans ajuster `vision.normalize_asset_name()` et l'UI.
+
+## Cache et scans
+
+Le point sensible du projet est la performance du refresh. Le modele attendu est:
+
+- Full scan au demarrage, nouvelle partie detectee ou reset manuel.
+- Fast scan sur les ticks normaux.
+- Le full scan relit les donnees fixes: pseudos, agents, ranks, levels, avatars, agents live duels.
+- Le fast scan conserve ces donnees fixes en cache et ne relit que les champs dynamiques: K-D, assists, FK/FD, ratios, pourcentages, kills/deaths live duels et scores applicatifs.
+
+Dans `vision.py`, ne remplace pas cette logique par une comparaison globale trop sensible. La detection de nouvelle game compare des hashs d'identite par ligne via `identity_hashes()` et ne force un full scan automatique que si plus de 3 identites de joueurs changent. Un changement isole doit rester en fast scan pour eviter OCR/template matching inutile.
+
+Les caches importants sont:
+
+- `static_ocr_cache`: OCR statique, par hash d'image.
+- `static_visual_cache`: template matching statique, par hash d'image.
+- `last_static_rows`: donnees fixes du scoreboard.
+- `last_live_duel_static`: agents live duels fixes.
+- `previous_dynamic_values`: derniers champs numeriques normalises, utiles quand l'OCR rend vide.
+
+Si tu ajoutes un reset de match, appelle `vision.force_full_scan()` et verifie que les caches ci-dessus sont bien invalides.
+
+## OCR et normalisation
+
+Ne fais pas de remplacement agressif dans les pseudos. Les confusions `0`, `O`, `o`, `I`, `l` ne doivent etre corrigees que dans les champs numeriques.
+
+Le pattern actuel:
+
+- `clean_text()` nettoie legerement le texte brut et garde les noms lisibles.
+- `normalize_numeric_text()` convertit les confusions OCR seulement pour les stats numeriques.
+- Les champs dynamiques conservent une paire `*_raw` et champ normalise quand c'est utile, par exemple `kd_raw` + `kd`.
+- Les champs numeriques comparent avec `previous_dynamic_values` pour garder une valeur precedente si l'OCR rend vide.
+
+Si tu modifies l'OCR, teste que les pseudos contenant `O`, `o` ou `0` ne sont pas transformes arbitrairement.
+
+## State JSON et API
+
+`main.py` gere l'etat global et sauvegarde aussi `debug_captures/state.json`.
+
+Routes actuelles:
+
+- `GET /`: UI web locale.
+- `GET /api/state`: state complet.
+- `POST /api/new-game`: reset cache, score et prochain full scan.
+- `POST /api/score/<allies|enemies>/<up|down>`: ajuste le score manuel.
+- `GET /assets/agents/<filename>` et `GET /assets/ranks/<filename>`: assets UI.
+
+Le score est applicatif et manuel pour l'instant. Il doit rester dans `state["score"]`, `state["latest"]["score"]` et les snapshots pour que l'UI et un futur assistant IA lisent la meme verite.
+
+## Raccourcis
+
+Les raccourcis sont dans `shortcuts.py` avec la librairie `keyboard`:
+
+- `T+N`: nouvelle partie, reset cache, full scan.
+- `T+ArrowLeft`: score ennemi -1.
+- `T+ArrowRight`: score ennemi +1.
+- `T+ArrowUp`: score allie +1.
+- `T+ArrowDown`: score allie -1.
+
+Si tu changes ces raccourcis, mets a jour `README.md`, `shortcuts.py` et eventuellement l'UI.
+
+## Capture et zones
+
+`capture.py` depend de Win32/DWM et cherche les titres de fenetre `valorant tracker` et `valorant tracker: duels`. `config.py` contient les ratios de zones OCR/template. Toute modification de layout Valorant Tracker doit passer par `config.py` et etre verifiee avec les images debug:
+
+- `debug_captures/scoreboard.png`
+- `debug_captures/live_duels.png`
+- `debug_captures/VISUAL_DEBUG_SCOREBOARD.png`
+- `debug_captures/VISUAL_DEBUG_LIVE_DUELS.png`
+
+## UI
+
+L'UI est volontairement dense, sombre et lisible sur second ecran. Elle doit rester compacte: pas de hero, pas de decoration inutile, pas de gros blocs marketing. Elle doit afficher au minimum match courant, score, joueurs, agents, ranks, stats, live duels, snapshots et timings pipeline.
+
+## Futur assistant IA local
+
+Le futur assistant local type Ollama/Qwen/Llama devrait lire `GET /api/state` ou `debug_captures/state.json`. Avant d'ajouter de l'IA, stabilise le schema JSON et evite d'introduire une dependance distante obligatoire.
