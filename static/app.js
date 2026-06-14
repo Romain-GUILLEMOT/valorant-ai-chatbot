@@ -13,6 +13,7 @@ const SHORTCUTS = [
   ["T+DOWN", "Ally score -1"],
   ["T+RIGHT", "Enemy score +1"],
   ["T+LEFT", "Enemy score -1"],
+  ["T+L", "Taunt last killer"],
   ["T+K", "Llama disclaimer"]
 ];
 
@@ -151,6 +152,12 @@ function renderDeaths(deaths) {
   `).join("") || `<div class="death-item"><b class="muted">none</b><span>--</span></div>`;
 }
 
+function promptDataPreview(prompt) {
+  if (!prompt) return "no prompt yet";
+  const parts = String(prompt).split("Match data:");
+  return (parts[1] || prompt).trim();
+}
+
 async function postScore(team, direction) {
   await fetch(`/api/score/${team}/${direction}`, { method: "POST" });
 }
@@ -189,6 +196,7 @@ function renderData(data) {
       ? `copied (${ai.last_generation_ms || 0}ms): ${ai.last_message}`
       : `error (${ai.last_generation_ms || 0}ms): ${ai.last_error}`;
   }
+  document.querySelector("#ai-data").textContent = promptDataPreview(ai.last_sent_prompt);
 }
 
 async function load() {

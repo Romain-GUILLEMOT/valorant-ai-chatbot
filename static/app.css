@@ -423,6 +423,20 @@ kbd {
   line-height: 1.35;
 }
 
+.ai-data {
+  max-height: 190px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--muted);
+  background: #0c0e12;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .muted { color: var(--muted); }
 .good { color: var(--good); }
 .bad { color: var(--bad); }

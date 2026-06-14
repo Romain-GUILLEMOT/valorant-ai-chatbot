@@ -61,6 +61,19 @@ PROMPTS = {
             "The goal is to make everyone pause for one second and wonder what that was."
         )
     },
+    "p6": {
+        "hotkey": "t+l",
+        "label": "Last killer taunt",
+        "audience": "enemy",
+        "target": "last_killer",
+        "instruction": (
+            "Taunt the enemy who killed me most recently. "
+            "Use only the latest death and live duel facts. "
+            "Do not pretend I killed them if the data says they killed me. "
+            "Do not mention any number count ratio or score. "
+            "Make it sound like I am coming back for them next round."
+        )
+    },
     "disclaimer": {
         "hotkey": "t+k",
         "label": "Ollama disclaimer",
@@ -107,6 +120,7 @@ def public_prompts():
             "audience": prompt["audience"]
         }
         for prompt_id, prompt in PROMPTS.items()
+        if prompt_id != "disclaimer"
     ]
 
 
@@ -128,6 +142,39 @@ def compact_player(row, player_name):
     }
 
 
+def normalized_stat(value):
+    return re.sub(r"\s+", "", str(value or "")).lower()
+
+
+def suspect_scoreboard_stats(rows):
+    kd_values = [normalized_stat(row.get("kd")) for row in rows if row.get("kd")]
+    kast_values = [normalized_stat(row.get("kast")) for row in rows if row.get("kast")]
+
+    if len(kd_values) >= 6:
+        most_common_kd = max(kd_values.count(value) for value in set(kd_values))
+
+        if most_common_kd / len(kd_values) >= 0.7:
+            return True
+
+    if len(kast_values) >= 6:
+        hundred_count = sum(1 for value in kast_values if value in ["100%", "100"])
+
+        if hundred_count / len(kast_values) >= 0.7:
+            return True
+
+    return False
+
+
+def agent_to_enemy_name(scoreboard, agent):
+    agent = (agent or "").lower()
+
+    for row in scoreboard:
+        if row.get("team") == "enemies" and (row.get("agent") or "").lower() == agent:
+            return row.get("name")
+
+    return ""
+
+
 def compact_state(state):
     latest = state.get("latest") or {}
     settings = ollama_settings()
@@ -135,18 +182,48 @@ def compact_state(state):
         compact_player(row, settings["player_name"])
         for row in latest.get("scoreboard", [])
     ]
+    stats_reliable = not suspect_scoreboard_stats(scoreboard)
+    duels = []
+
+    for row in latest.get("live_duels", []):
+        agent = row.get("agent")
+        duels.append({
+            "slot": row.get("slot"),
+            "agent": agent,
+            "enemy_name": agent_to_enemy_name(scoreboard, agent),
+            "i_killed_them": row.get("kills"),
+            "they_killed_me": row.get("deaths")
+        })
+
+    last_deaths = []
+
+    for row in state.get("death_log", [])[-2:]:
+        agent = row.get("killed_by_agent")
+        last_deaths.append({
+            **row,
+            "enemy_name": agent_to_enemy_name(scoreboard, agent)
+        })
 
     return {
         "my_name": settings["player_name"],
         "score": latest.get("score") or state.get("score"),
+        "scoreboard_stats_reliable": stats_reliable,
         "me": next((row for row in scoreboard if row.get("is_me")), None),
         "players": scoreboard,
-        "duels": latest.get("live_duels", []),
-        "last_deaths": state.get("death_log", [])[-2:]
+        "duels": duels,
+        "last_deaths": last_deaths
     }
 
 
 def choose_mention_target(context, audience):
+    if audience == "last_killer":
+        deaths = context.get("last_deaths", [])
+
+        if deaths:
+            return mention_name(deaths[-1].get("enemy_name"))
+
+        return ""
+
     rows = context.get("players", [])
 
     if audience == "ally":
@@ -174,7 +251,23 @@ def mention_name(name):
     return f"@{name} "
 
 
-def context_lines(context):
+def context_lines(context, prompt_id=None):
+    if prompt_id == "p6":
+        deaths = context.get("last_deaths", [])
+
+        if not deaths:
+            return "Last killer: unknown"
+
+        latest_death = deaths[-1]
+        target = latest_death.get("enemy_name") or latest_death.get("killed_by_agent") or "unknown"
+
+        return (
+            f"Last killer target only: {target}\n"
+            f"Last killer agent: {latest_death.get('killed_by_agent')}\n"
+            "This enemy killed me most recently\n"
+            "Do not mention any other enemy agent player or count"
+        )
+
     lines = [
         f"Local player name used only to identify my own stats: {context.get('my_name')}",
         "Never target mention or mock the local player",
@@ -182,19 +275,25 @@ def context_lines(context):
     ]
 
     me = context.get("me")
-    if me:
+    if me and context.get("scoreboard_stats_reliable"):
         lines.append(
             "My stats: "
             f"agent={me.get('agent')} kd={me.get('kd')} "
             f"assists={me.get('assists')} kast={me.get('kast')}"
         )
+    elif me:
+        lines.append(f"My known identity: agent={me.get('agent')} scoreboard_stats=unreliable_do_not_use")
 
     enemies = [row for row in context.get("players", []) if row.get("team") == "enemies"][:5]
     if enemies:
         lines.append(
             "Enemies: "
             + "; ".join(
-                f"{row.get('name')} {row.get('agent')} kd={row.get('kd')} kast={row.get('kast')}"
+                (
+                    f"{row.get('name')} {row.get('agent')} kd={row.get('kd')} kast={row.get('kast')}"
+                    if context.get("scoreboard_stats_reliable")
+                    else f"{row.get('name')} {row.get('agent')}"
+                )
                 for row in enemies
             )
         )
@@ -204,7 +303,12 @@ def context_lines(context):
         lines.append(
             "Live duels: "
             + "; ".join(
-                f"{row.get('agent')} killed={row.get('kills')} killed_by={row.get('deaths')}"
+                (
+                    f"vs {row.get('enemy_name') or row.get('agent')} "
+                    f"agent={row.get('agent')} "
+                    f"I killed them {row.get('i_killed_them')} times "
+                    f"they killed me {row.get('they_killed_me')} times"
+                )
                 for row in duels
             )
         )
@@ -214,7 +318,7 @@ def context_lines(context):
         lines.append(
             "Recent deaths: "
             + "; ".join(
-                f"tue par {row.get('killed_by_agent')} at={row.get('at')}"
+                f"{row.get('killed_by_agent')} killed me at={row.get('at')}"
                 for row in deaths
             )
         )
@@ -225,7 +329,7 @@ def context_lines(context):
 def build_prompt(prompt_id, state):
     prompt = PROMPTS[prompt_id]
     context = compact_state(state)
-    mention = choose_mention_target(context, prompt["audience"])
+    mention = choose_mention_target(context, prompt.get("target") or prompt["audience"])
     settings = ollama_settings()
 
     mention_rule = (
@@ -238,6 +342,12 @@ def build_prompt(prompt_id, state):
         "Maximum 90 characters. No commas. No quotes. No explanation.\n"
         "No clear insult. No threat. Never flame my team.\n"
         "Ignore HS/headshot percentage and never mention HS/headshot.\n"
+        "Do not invent stats. Do not calculate ratios or percentages.\n"
+        "Do not invent time windows like last 5 duels or fake counts.\n"
+        "If scoreboard_stats_reliable is false, do not mention K-D KAST assists or scoreboard stats.\n"
+        "For live duels, 'I killed them' means my kills and 'they killed me' means my deaths.\n"
+        "Never say I killed an agent unless I killed them is greater than 0.\n"
+        "Never say I am winning a duel unless I killed them is greater than they killed me.\n"
         "Write in first person as if I am sending the message myself.\n"
         "Never include my player name or any nickname variant in the output.\n"
         "Never target me never mention me and never make fun of my stats.\n"
@@ -246,7 +356,7 @@ def build_prompt(prompt_id, state):
         f"Task: {prompt['instruction']}\n"
         f"Optional mention: {mention}\n"
         f"{mention_rule}\n"
-        f"Match data:\n{context_lines(context)}"
+        f"Match data:\n{context_lines(context, prompt_id)}"
     )
 
     return {
@@ -356,9 +466,10 @@ def generate_message(prompt_id, state):
         retry_payload["prompt"] = (
             "Write only one short English Valorant chat line. "
             "No commas. No quotes. No clear insult. Never mention HS/headshot. "
+            "Do not invent stats. Do not mention K-D or KAST if stats are unreliable. "
             "Write in first person as me. Never include my player name or variants. "
             f"Task: {PROMPTS[prompt_id]['instruction']} "
-            f"Data: {context_lines(compact_state(state))}"
+            f"Data: {context_lines(compact_state(state), prompt_id)}"
         )
         retry_payload["options"] = {
             "temperature": 0.7,
