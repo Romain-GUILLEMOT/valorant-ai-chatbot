@@ -150,26 +150,40 @@ def choose_mention_target(context, audience):
     rows = context.get("players", [])
 
     if audience == "ally":
-        candidates = [row for row in rows if row.get("team") == "allies" and row.get("name")]
+        candidates = [row for row in rows if row.get("team") == "allies" and row.get("name") and not row.get("is_me")]
     else:
         candidates = [row for row in rows if row.get("team") == "enemies" and row.get("name")]
 
-    if not candidates or random.random() >= 0.33:
+    mentionable = [row for row in candidates if mention_name(row.get("name"))]
+
+    if not mentionable or random.random() >= 0.33:
         return ""
 
-    return random.choice(candidates).get("name", "")
+    return mention_name(random.choice(mentionable).get("name"))
+
+
+def mention_name(name):
+    name = (name or "").strip()
+
+    if not name or re.search(r"\s", name):
+        return ""
+
+    if not re.fullmatch(r"[\w]+", name, flags=re.UNICODE):
+        return ""
+
+    return f"@{name} "
 
 
 def context_lines(context):
     lines = [
-        f"Joueur local: {context.get('my_name')}",
+        f"Local player: {context.get('my_name')}",
         f"Score: {context.get('score')}"
     ]
 
     me = context.get("me")
     if me:
         lines.append(
-            "Mes stats: "
+            "My stats: "
             f"name={me.get('name')} agent={me.get('agent')} kd={me.get('kd')} "
             f"assists={me.get('assists')} kast={me.get('kast')}"
         )
@@ -177,7 +191,7 @@ def context_lines(context):
     enemies = [row for row in context.get("players", []) if row.get("team") == "enemies"][:5]
     if enemies:
         lines.append(
-            "Adversaires: "
+            "Enemies: "
             + "; ".join(
                 f"{row.get('name')} {row.get('agent')} kd={row.get('kd')} kast={row.get('kast')}"
                 for row in enemies
@@ -197,7 +211,7 @@ def context_lines(context):
     deaths = context.get("last_deaths", [])
     if deaths:
         lines.append(
-            "Dernieres morts: "
+            "Recent deaths: "
             + "; ".join(
                 f"tue par {row.get('killed_by_agent')} at={row.get('at')}"
                 for row in deaths
@@ -213,16 +227,23 @@ def build_prompt(prompt_id, state):
     mention = choose_mention_target(context, prompt["audience"])
     settings = ollama_settings()
 
+    mention_rule = (
+        "If you use the optional mention, put it at the start exactly as provided, including the trailing space. "
+        "Never attach punctuation directly to a mention."
+    )
+
     prompt_text = (
-        "Donne seulement une phrase courte en francais ou franglais pour le chat Valorant.\n"
-        "Maximum 90 caracteres. Pas de guillemets. Pas d'explication.\n"
-        "Pas de gros mot clair. Pas de menace. Ne critique jamais mon equipe.\n"
-        "Ignore totalement le pourcentage HS/headshot et ne mentionne jamais HS/headshot dans la reponse.\n"
-        "Evite les metaphores animales ou trop longues.\n"
-        f"Mon pseudo est {settings['player_name']}.\n"
-        f"Objectif: {prompt['instruction']}\n"
-        f"Mention optionnelle: {mention}\n"
-        f"Donnees match:\n{context_lines(context)}"
+        "Write only one short English Valorant chat line.\n"
+        "Maximum 90 characters. No commas. No quotes. No explanation.\n"
+        "No clear insult. No threat. Never flame my team.\n"
+        "Ignore HS/headshot percentage and never mention HS/headshot.\n"
+        "Never include my player name or any nickname variant in the output.\n"
+        "Avoid animal metaphors and long poetic sentences.\n"
+        f"My player name is {settings['player_name']}.\n"
+        f"Task: {prompt['instruction']}\n"
+        f"Optional mention: {mention}\n"
+        f"{mention_rule}\n"
+        f"Match data:\n{context_lines(context)}"
     )
 
     return {
@@ -237,14 +258,23 @@ def build_prompt(prompt_id, state):
     }
 
 
-def sanitize_chat_line(text):
+def sanitize_chat_line(text, player_name=""):
     line = re.sub(r"\s+", " ", (text or "").strip())
     line = line.split("\n", 1)[0].strip('"').strip("'").strip()
-    line = re.sub(r"^(message|reponse|phrase)\s*:\s*", "", line, flags=re.IGNORECASE).strip()
+    line = re.sub(r"^(message|response|answer|line|reponse|phrase)\s*:\s*", "", line, flags=re.IGNORECASE).strip()
 
     sentences = re.split(r"(?<=[.!?])\s+", line)
     if sentences and len(sentences[0]) >= 8:
         line = sentences[0].strip()
+
+    line = line.replace(",", "")
+    line = re.sub(r"(@[\w]+)([.!?:;])", r"\1 \2", line, flags=re.UNICODE)
+    line = line.replace('"', "").replace("'", "")
+
+    if player_name:
+        line = re.sub(re.escape(player_name), "", line, flags=re.IGNORECASE).strip()
+        line = re.sub(r"\bYota\w*\b", "", line, flags=re.IGNORECASE).strip()
+        line = re.sub(r"\s{2,}", " ", line)
 
     banned_fragments = [
         "fuck", "shit", "bitch", "retard", "suicide", "kill yourself",
@@ -256,6 +286,15 @@ def sanitize_chat_line(text):
         if fragment in lowered:
             return "btw your mental economy is on eco"
 
+    french_markers = [
+        " le ", " la ", " les ", " des ", " une ", " un ", " tu ", " ton ",
+        " votre ", " equipe", " victoire", " defaite", " perdu", " gagne"
+    ]
+    padded = f" {lowered} "
+
+    if any(marker in padded for marker in french_markers):
+        return ""
+
     if len(line) > 90:
         line = line[:87].rstrip(" ,;:.!?") + "..."
 
@@ -264,11 +303,11 @@ def sanitize_chat_line(text):
 
 def fallback_message(prompt_id):
     fallbacks = {
-        "p1": "btw ton mental joue en eco",
-        "p2": "on respire, meme le spike croit encore au projet",
-        "p3": "gg, scoreboard perdu mais duel economy rentable",
-        "p4": "kills ou pas, mon KAST paie le loyer",
-        "p5": "le vrai lurk etait dans notre metaphysique"
+        "p1": "btw your mental is on eco",
+        "p2": "we breathe then the spike remembers us",
+        "p3": "gg lost the map won the duel economy",
+        "p4": "kills are loud but KAST pays rent",
+        "p5": "the spike is buffering reality"
     }
     return fallbacks.get(prompt_id, "btw the spike has more philosophy than us")
 
@@ -312,10 +351,10 @@ def generate_message(prompt_id, state):
     if not raw_response:
         retry_payload = dict(payload)
         retry_payload["prompt"] = (
-            "Donne seulement une phrase courte en francais pour Valorant. "
-            "Pas de gros mot. Ne mentionne jamais HS/headshot. "
-            f"Objectif: {PROMPTS[prompt_id]['instruction']} "
-            f"Donnees: {context_lines(compact_state(state))}"
+            "Write only one short English Valorant chat line. "
+            "No commas. No quotes. No clear insult. Never mention HS/headshot. "
+            f"Task: {PROMPTS[prompt_id]['instruction']} "
+            f"Data: {context_lines(compact_state(state))}"
         )
         retry_payload["options"] = {
             "temperature": 0.7,
@@ -335,7 +374,7 @@ def generate_message(prompt_id, state):
         except urllib.error.URLError:
             pass
 
-    message = sanitize_chat_line(raw_response) or fallback_message(prompt_id)
+    message = sanitize_chat_line(raw_response, settings["player_name"]) or fallback_message(prompt_id)
     copy_to_clipboard(message)
     return message, sent_prompt, raw_response
 
