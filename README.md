@@ -84,12 +84,12 @@ Le pseudo local reste dans le prompt pour identifier les stats du joueur local. 
 - `POST /api/score/allies/down`: score allie -1.
 - `POST /api/score/enemies/up`: score ennemi +1.
 - `POST /api/score/enemies/down`: score ennemi -1.
-- `POST /api/ai/p1`: genere/copie le prompt enemy tilt.
-- `POST /api/ai/p2`: genere/copie le prompt encouragement equipe.
-- `POST /api/ai/p3`: genere/copie le prompt GG defaite.
-- `POST /api/ai/p4`: genere/copie le prompt objectif/KAST.
-- `POST /api/ai/p5`: genere/copie le prompt WTF random.
-- `POST /api/ai/p6`: genere/copie le prompt taunt sur le dernier killer.
+- `POST /api/ai/p1`: pique safe contre un ennemi.
+- `POST /api/ai/p2`: message pour motiver l'equipe.
+- `POST /api/ai/p3`: GG de defaite avec ego calme.
+- `POST /api/ai/p4`: reponse si on critique ton impact/kills.
+- `POST /api/ai/p5`: message WTF random.
+- `POST /api/ai/p6`: pique safe contre le dernier ennemi qui t'a tue.
 - `POST /api/ai/disclaimer`: copie le disclaimer Llama local.
 - `GET /assets/agents/<filename>`: sert les images agents.
 - `GET /assets/ranks/<filename>`: sert les images ranks.

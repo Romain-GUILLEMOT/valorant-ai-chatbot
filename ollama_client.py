@@ -13,7 +13,7 @@ DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
 PROMPTS = {
     "p1": {
         "hotkey": "t+u",
-        "label": "Enemy tilt",
+        "label": "Pique ennemi",
         "audience": "enemy",
         "instruction": (
             "Find the enemy who is most likely tilted, currently weak, or losing direct duels against me. "
@@ -23,7 +23,7 @@ PROMPTS = {
     },
     "p2": {
         "hotkey": "t+i",
-        "label": "Team reset",
+        "label": "Motiver team",
         "audience": "ally",
         "instruction": (
             "Motivate my own team when the match is close or going badly. "
@@ -33,7 +33,7 @@ PROMPTS = {
     },
     "p3": {
         "hotkey": "t+o",
-        "label": "Lost GG",
+        "label": "GG defaite",
         "audience": "enemy",
         "instruction": (
             "Write a GG for the end of a lost match where my team lost but my individual stats still look strong. "
@@ -43,7 +43,7 @@ PROMPTS = {
     },
     "p4": {
         "hotkey": "t+p",
-        "label": "Objective clapback",
+        "label": "Defendre impact",
         "audience": "ally",
         "instruction": (
             "Reply to a teammate who complains that I do not have enough kills. "
@@ -53,7 +53,7 @@ PROMPTS = {
     },
     "p5": {
         "hotkey": "t+j",
-        "label": "WTF random",
+        "label": "Message WTF",
         "audience": "lobby",
         "instruction": (
             "Write a completely unexpected Valorant lobby message. "
@@ -63,7 +63,7 @@ PROMPTS = {
     },
     "p6": {
         "hotkey": "t+l",
-        "label": "Last killer taunt",
+        "label": "Pique killer",
         "audience": "enemy",
         "target": "last_killer",
         "instruction": (
