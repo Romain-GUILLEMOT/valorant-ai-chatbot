@@ -10,7 +10,10 @@
   <main class="shell">
     <header class="topbar">
       <div class="match-block">
-        <div id="game" class="game-id">MATCH ?</div>
+        <div>
+          <div id="game" class="game-id">MATCH ?</div>
+          <div id="match-meta" class="match-meta">total 0ms - refresh --</div>
+        </div>
         <div id="status" class="status-pill">STARTING</div>
       </div>
 
@@ -33,10 +36,22 @@
       <button id="new-game-btn" class="reset-btn">RESET</button>
     </header>
 
-    <section class="perf-grid" id="timings"></section>
-    <section class="duels-grid" id="duels"></section>
-    <section class="players-panel" id="players"></section>
-    <section class="history-strip" id="history"></section>
+    <section class="layout">
+      <div class="main-stack">
+        <section class="duels-grid" id="duels"></section>
+        <section class="players-panel" id="players"></section>
+      </div>
+      <aside class="side-panel">
+        <div class="side-title">SHORTCUTS</div>
+        <div id="shortcut-list" class="prompt-list"></div>
+        <div class="side-title">AI PROMPTS</div>
+        <div id="prompt-list" class="prompt-list"></div>
+        <div class="side-title">LAST DEATHS</div>
+        <div id="death-log" class="death-log"></div>
+        <div class="side-title">AI</div>
+        <div id="ai-status" class="ai-status">idle</div>
+      </aside>
+    </section>
   </main>
   <script src="/static/app.js"></script>
 </body>

@@ -3,3 +3,5 @@ __pycache__/
 *.py[cod]
 debug_captures/
 .idea/
+.env
+server*.log

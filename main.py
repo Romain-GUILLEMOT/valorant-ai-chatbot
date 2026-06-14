@@ -8,6 +8,7 @@ import capture
 import config
 import vision
 import shortcuts
+import ollama_client
 
 SCAN_INTERVAL = 5
 HOST = "127.0.0.1"
@@ -25,6 +26,15 @@ state = {
         "enemies": 0,
         "source": "manual",
         "updated_at": None
+    },
+    "death_log": [],
+    "ai": {
+        "last_prompt": None,
+        "last_sent_prompt": None,
+        "last_message": None,
+        "last_error": None,
+        "updated_at": None,
+        "prompts": ollama_client.public_prompts()
     },
     "games": [],
     "latest": {
@@ -51,6 +61,7 @@ state = {
 }
 
 force_new_game = False
+last_live_deaths = {}
 
 def save_state():
     os.makedirs(config.DEBUG_DIR, exist_ok=True)
@@ -83,11 +94,73 @@ def adjust_score(team, delta):
 
     print(f"[shortcut] score allies={score['allies']} enemies={score['enemies']}")
 
+def record_live_deaths(live_duels, now):
+    global last_live_deaths
+
+    for row in live_duels:
+        slot = row.get("slot")
+        deaths = int(row.get("deaths") or 0)
+        previous = last_live_deaths.get(slot, deaths)
+
+        if deaths > previous:
+            state["death_log"].append({
+                "at": now,
+                "game_id": state["current_game_id"],
+                "slot": slot,
+                "killed_by_agent": row.get("agent"),
+                "deaths": deaths,
+                "previous_deaths": previous
+            })
+            state["death_log"] = state["death_log"][-3:]
+
+        last_live_deaths[slot] = deaths
+
+def generate_ai_message(prompt_id):
+    now = datetime.now().isoformat(timespec="seconds")
+
+    with state_lock:
+        snapshot = json.loads(json.dumps(state, ensure_ascii=False))
+
+    try:
+        message, sent_prompt = ollama_client.generate_message(prompt_id, snapshot)
+        error = None
+    except Exception as exc:
+        message = None
+        sent_prompt = None
+        error = str(exc)
+
+    with state_lock:
+        state["ai"]["last_prompt"] = prompt_id
+        state["ai"]["last_sent_prompt"] = sent_prompt
+        state["ai"]["last_message"] = message
+        state["ai"]["last_error"] = error
+        state["ai"]["updated_at"] = now
+        save_state()
+
+    if message:
+        print(f"[ai:{prompt_id}] copied: {message}")
+        print(f"[ai:{prompt_id}:prompt]\n{sent_prompt}")
+    else:
+        print(f"[ai:{prompt_id}] error: {error}")
+
+    return message, sent_prompt, error
+
+def warm_ollama_loop():
+    while True:
+        try:
+            ollama_client.warm_model()
+            print("[ai] ollama model warm")
+        except Exception as exc:
+            print(f"[ai] warmup skipped: {exc}")
+
+        time.sleep(20 * 60)
+
 def request_new_game_full_scan():
-    global force_new_game
+    global force_new_game, last_live_deaths
 
     with state_lock:
         force_new_game = True
+        last_live_deaths = {}
         vision.force_full_scan()
         reset_score()
         state["latest"]["score"] = dict(state["score"])
@@ -134,9 +207,12 @@ def update_game(scoreboard, live_duels, timings):
         new_game = True
 
     if new_game:
+        last_live_deaths.clear()
         start_new_game(now)
     else:
         ensure_game(now)
+
+    record_live_deaths(live_duels, now)
 
     if signature:
         state["last_signature"] = signature
@@ -146,6 +222,7 @@ def update_game(scoreboard, live_duels, timings):
         "scoreboard": scoreboard,
         "live_duels": live_duels,
         "score": dict(state["score"]),
+        "death_log": list(state["death_log"]),
         **timings
     }
 
@@ -225,7 +302,7 @@ def scanner_loop():
         time.sleep(SCAN_INTERVAL)
 
 def shortcut_loop():
-    shortcuts.start_shortcuts(request_new_game_full_scan, adjust_score)
+    shortcuts.start_shortcuts(request_new_game_full_scan, adjust_score, generate_ai_message)
 
 @app.get("/")
 def index():
@@ -252,6 +329,15 @@ def api_score(team, direction):
     with state_lock:
         return jsonify({"ok": True, "score": state["score"]})
 
+@app.post("/api/ai/<prompt_id>")
+def api_ai(prompt_id):
+    message, sent_prompt, error = generate_ai_message(prompt_id)
+
+    if error:
+        return jsonify({"ok": False, "error": error}), 502
+
+    return jsonify({"ok": True, "message": message, "sent_prompt": sent_prompt})
+
 @app.get("/assets/agents/<path:filename>")
 def agent_asset(filename):
     return send_from_directory(config.AGENTS_DIR, filename)
@@ -263,6 +349,7 @@ def rank_asset(filename):
 if __name__ == "__main__":
     threading.Thread(target=scanner_loop, daemon=True).start()
     threading.Thread(target=shortcut_loop, daemon=True).start()
+    threading.Thread(target=warm_ollama_loop, daemon=True).start()
 
     print(f"[+] web: http://{HOST}:{PORT}")
     app.run(host=HOST, port=PORT, debug=False, use_reloader=False)

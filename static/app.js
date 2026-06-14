@@ -2,6 +2,18 @@ const empty = value => value || "<span class=\"muted\">?</span>";
 const agentSrc = row => row?.agent_img ? `/assets/agents/${row.agent_img}` : "";
 const rankSrc = row => row?.rank_img ? `/assets/ranks/${row.rank_img}` : "/assets/ranks/unknown.png";
 
+let lastData = null;
+let lastUpdatedAt = null;
+
+const SHORTCUTS = [
+  ["T+N", "Reset game + full scan"],
+  ["T+UP", "Ally score +1"],
+  ["T+DOWN", "Ally score -1"],
+  ["T+RIGHT", "Enemy score +1"],
+  ["T+LEFT", "Enemy score -1"],
+  ["T+G", "Gamma disclaimer"]
+];
+
 const pct = value => {
   if (!value) return "<span class=\"muted\">?</span>";
   const s = String(value).trim();
@@ -23,8 +35,18 @@ const numberTone = (value, good, bad) => {
   return n >= good ? "good" : n < bad ? "bad" : "neutral";
 };
 
-function perf(label, value, wide = false) {
-  return `<div class="perf ${wide ? "wide" : ""}"><span>${label}</span><b>${value}</b></div>`;
+function secondsAgo(isoDate) {
+  if (!isoDate) return "--";
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return "--";
+  const seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+  return `${seconds}s ago`;
+}
+
+function renderMatchMeta() {
+  const latest = lastData?.latest || {};
+  document.querySelector("#match-meta").textContent =
+    `total ${latest.scan_ms || 0}ms - ${latest.full_scan ? "FULL" : "FAST"} - refresh ${secondsAgo(lastUpdatedAt)}`;
 }
 
 function playerRow(row) {
@@ -93,16 +115,37 @@ function renderPlayers(rows) {
   </table>`;
 }
 
-function renderHistory(games) {
-  const game = games?.at(-1);
-  const snapshots = (game?.snapshots || []).slice(-8).reverse();
-  document.querySelector("#history").innerHTML = snapshots.map(s => `
-    <div class="snap">
-      <b>${String(s.at || "").split("T").at(-1) || "?"}</b>
-      <span>${s.full_scan ? "FULL" : "FAST"}</span>
-      <i>${s.scan_ms || 0}ms</i>
+function renderShortcutList() {
+  document.querySelector("#shortcut-list").innerHTML = SHORTCUTS.map(([hotkey, label]) => `
+    <div class="shortcut-row">
+      <kbd>${hotkey}</kbd>
+      <span>${label}</span>
     </div>
   `).join("");
+}
+
+function renderPrompts(ai) {
+  const prompts = ai?.prompts || [];
+  document.querySelector("#prompt-list").innerHTML = prompts.map(prompt => `
+    <button class="prompt-btn" data-prompt="${prompt.id}">
+      <kbd>${prompt.hotkey}</kbd>
+      <span>${prompt.label}</span>
+      <em>${prompt.audience}</em>
+    </button>
+  `).join("");
+
+  document.querySelectorAll(".prompt-btn").forEach(button => {
+    button.addEventListener("click", () => postPrompt(button.dataset.prompt));
+  });
+}
+
+function renderDeaths(deaths) {
+  document.querySelector("#death-log").innerHTML = (deaths || []).slice(-3).reverse().map(death => `
+    <div class="death-item">
+      <b>${empty(death.killed_by_agent)}</b>
+      <span>${String(death.at || "").split("T").at(-1) || "?"}</span>
+    </div>
+  `).join("") || `<div class="death-item"><b class="muted">none</b><span>--</span></div>`;
 }
 
 async function postScore(team, direction) {
@@ -110,30 +153,39 @@ async function postScore(team, direction) {
   await load();
 }
 
+async function postPrompt(promptId) {
+  const status = document.querySelector("#ai-status");
+  status.textContent = "generating...";
+  const res = await fetch(`/api/ai/${promptId}`, { method: "POST" });
+  const data = await res.json();
+  console.log("[valorant-ai] prompt sent", data.sent_prompt || data.error || "no prompt");
+  status.textContent = data.ok ? `copied: ${data.message}` : `error: ${data.error}`;
+  await load();
+}
+
 async function load() {
   const data = await fetch("/api/state", { cache: "no-store" }).then(r => r.json());
   const latest = data.latest || {};
   const score = latest.score || data.score || {};
+  lastData = data;
+  lastUpdatedAt = latest.updated_at || null;
 
   document.querySelector("#status").textContent = String(data.status || "unknown").toUpperCase();
   document.querySelector("#game").textContent = `MATCH ${data.current_game_id || 1}`;
+  renderMatchMeta();
   document.querySelector("#score-allies").textContent = score.allies ?? 0;
   document.querySelector("#score-enemies").textContent = score.enemies ?? 0;
 
-  document.querySelector("#timings").innerHTML = [
-    perf("total", `${latest.scan_ms || 0}ms`),
-    perf("capture", `${latest.capture_ms || 0}ms`),
-    perf("vision", `${latest.vision_ms || 0}ms`),
-    perf("ocr", `${latest.ocr_ms || 0}ms`),
-    perf("template", `${latest.template_ms || 0}ms`),
-    perf("cache", `${latest.cache_hits || 0}/${latest.cache_misses || 0}`),
-    perf("mode", latest.full_scan ? "FULL" : "FAST"),
-    perf("identity", `${latest.identity_changes || 0} - ${latest.full_scan_reason || "fast"}`, true)
-  ].join("");
-
   document.querySelector("#duels").innerHTML = (latest.live_duels || []).map(duel).join("");
   renderPlayers(latest.scoreboard || []);
-  renderHistory(data.games || []);
+  renderShortcutList();
+  renderPrompts(data.ai || {});
+  renderDeaths(data.death_log || []);
+
+  const ai = data.ai || {};
+  if (ai.last_message || ai.last_error) {
+    document.querySelector("#ai-status").textContent = ai.last_message ? `copied: ${ai.last_message}` : `error: ${ai.last_error}`;
+  }
 }
 
 document.querySelector("#new-game-btn").addEventListener("click", async () => {
@@ -147,3 +199,4 @@ document.querySelectorAll(".score-btn").forEach(button => {
 
 load();
 setInterval(load, 3000);
+setInterval(renderMatchMeta, 1000);
