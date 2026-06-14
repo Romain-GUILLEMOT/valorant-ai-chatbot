@@ -12,7 +12,7 @@ DEFAULT_OLLAMA_MODEL = "gemma4:e4b"
 
 PROMPTS = {
     "p1": {
-        "hotkey": "t+1",
+        "hotkey": "t+f1",
         "label": "Enemy tilt",
         "audience": "enemy",
         "instruction": (
@@ -22,7 +22,7 @@ PROMPTS = {
         )
     },
     "p2": {
-        "hotkey": "t+2",
+        "hotkey": "t+f2",
         "label": "Team reset",
         "audience": "ally",
         "instruction": (
@@ -32,7 +32,7 @@ PROMPTS = {
         )
     },
     "p3": {
-        "hotkey": "t+3",
+        "hotkey": "t+f3",
         "label": "Lost GG",
         "audience": "enemy",
         "instruction": (
@@ -42,7 +42,7 @@ PROMPTS = {
         )
     },
     "p4": {
-        "hotkey": "t+4",
+        "hotkey": "t+f4",
         "label": "Objective clapback",
         "audience": "ally",
         "instruction": (
@@ -52,7 +52,7 @@ PROMPTS = {
         )
     },
     "p5": {
-        "hotkey": "t+5",
+        "hotkey": "t+f5",
         "label": "WTF random",
         "audience": "lobby",
         "instruction": (
@@ -62,7 +62,7 @@ PROMPTS = {
         )
     },
     "disclaimer": {
-        "hotkey": "t+g",
+        "hotkey": "t+f6",
         "label": "Gamma disclaimer",
         "audience": "lobby",
         "instruction": "Copy the fixed disclaimer."

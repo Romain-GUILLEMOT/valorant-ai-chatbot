@@ -11,7 +11,7 @@ const SHORTCUTS = [
   ["T+DOWN", "Ally score -1"],
   ["T+RIGHT", "Enemy score +1"],
   ["T+LEFT", "Enemy score -1"],
-  ["T+G", "Gamma disclaimer"]
+  ["T+F6", "Gamma disclaimer"]
 ];
 
 const pct = value => {
